@@ -1,0 +1,7 @@
+bench.py	->	main python script
+numabench.sh	->	run benchmark without vtune to tune parameters
+setenv.sh	->	set environment before launch benchmark
+setkernel.sh	->	used to set kernel parameter used by Vtune 
+setpython.sh	-> 	install/upgrade libraries
+setvtune.sh	->	Vtune installation process for Debian
+vtune_wrapper.sh ->	Run benchmark under Vtune's monotoring
