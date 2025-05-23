@@ -12,7 +12,7 @@ UPI Stress: Divides the result matrix into 8x8 blocks to increase memory transac
 Thread Control: Ensures single-threaded BLAS operations using threadpoolctl and environment variables (OPENBLAS_NUM_THREADS=1, etc.) to avoid thread contention.
 Logging and Profiling: Logs execution details (CPU affinity, NUMA node allocation, thread count) to a timestamped file. Collects NUMA statistics via numastat and supports profiling with VTune for detailed memory and UPI analysis.
 
-Components
+
 The bench.py script consists of the following key components:
 
 NUMA Integration: Uses libnuma.so via ctypes for memory allocation (numa_alloc_onnode), CPU-to-node mapping (numa_node_of_cpu), and memory affinity (numa_set_membind, numa_set_preferred).
@@ -24,7 +24,7 @@ Logging: Implements a Tee class to redirect console output to a timestamped log 
 Progress Tracking: Uses tqdm to display a progress bar for task completion.
 Command-Line Interface: Parses arguments with argparse for configurable parameters (matrix size, iterations, NUMA node, etc.).
 
-Prerequisites
+
 To run the bench.py script, ensure the following requirements are met:
 Software Requirements
 
@@ -46,7 +46,7 @@ numactl: Command-line tool for NUMA statistics and system verification. Install 
 
 Intel VTune Profiler (optional): For memory access and UPI traffic analysis. Ensure it is installed and configured for memory-access collection.
 
-Hardware Requirements
+Hardware Requirements 
 
 NUMA System: A multi-node NUMA system with at least two nodes (e.g., dual-socket Intel Xeon server). Each node should have sufficient CPUs (minimum 20 physical cores per node for default settings) and memory (~100 MB free per node for 500x500 matrices).
 CPU Support: Supports hyper-threading (optional, controlled via --HT/--noHT flags). Without hyper-threading, 20 CPUs per node are assumed.
