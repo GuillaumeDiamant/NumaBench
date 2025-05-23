@@ -4,7 +4,6 @@ Project Overview
 The Numabench project is a performance benchmarking tool designed in python to stress the Ultra Path Interconnect (UPI) bus in a multi-node Non-Uniform Memory Access (NUMA) system. It achieves this by performing parallel matrix non optimal multiplications with memory allocations strategically placed across NUMA nodes to maximize remote memory accesses, thereby saturating the UPI bus. The tool is intended for performance analysis using profiling tools like Intel VTune Profiler, focusing on memory access patterns and UPI traffic.
 The script executes matrix multiplications in multiple processes, each pinned to a specific CPU, with input matrices allocated on designated NUMA nodes and result matrices allocated on the opposite node to the execution. This setup ensures high inter-node memory traffic, making it ideal for studying NUMA performance and UPI bottlenecks.
 
-Methodology
 The benchmarking methodology involves the following steps:
 
 Matrix Allocation: Allocates input matrices (A and B) on specified NUMA nodes (0, 1, or both) using libnuma. The result matrix (C) for each task is allocated on the NUMA node opposite to the execution node (e.g., node 1 for tasks on node 0, and vice versa) to force remote memory accesses.
