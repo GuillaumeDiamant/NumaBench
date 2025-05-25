@@ -1,30 +1,23 @@
 # bench.py
 #
-# Cartouche :
-# Objectif : Ce script effectue un tir de performance pour saturer le bus UPI (Ultra Path Interconnect)
-#           lors de calculs inter-NUMA sur un systeme multi-noeuds NUMA. Il utilise des multiplications
-#           de matrices parallellisees, avec des matrices d'entree allouees sur des noeuds NUMA specifiques
-#           et des matrices resultats allouees sur le noeud oppose a l'execution, afin de maximiser les
-#           acces memoire distants et le trafic UPI. Les performances sont analysees via des outils comme
-#           Intel VTune Profiler.
-# Contexte : Le script est concu pour tester les performances NUMA en controlant l'affinite CPU et memoire,
-#            en repartissant les taches entre deux noeuds NUMA, et en generant une charge elevee via des
-#            multiplications de matrices (via numpy.dot). Les resultats sont journalises pour analyse.
-# Parametres configurables :
-#   - --matrix-size : Taille des matrices carrees.
-#   - --iterations : Nombre de multiplications par tache.
-#   - --numa-node : Noeud(s) d'execution ('0', '1', ou 'both').
-#   - --memory-node : Noeud pour les matrices d'entree.
-#   - --num-tasks : Nombre de taches paralleles (2 a 40).
-#   - --HT/--noHT : Utilisation ou non de l'hyper-threading.
-# Dependances :
-#   - Bibliotheques Python : psutil, numpy, threadpoolctl, pyyaml, tqdm (installer via pip).
-#   - Bibliotheque systeme : libnuma.so pour la gestion NUMA.
-# Auteurs : GDI
-# Date : Mai 2025 (derniere mise a jour).
+# Objective: This script conducts a performance test to saturate the UPI (Ultra Path Interconnect) bus during inter-NUMA computations on a multi-node NUMA system. It employs parallelized matrix multiplications, with input matrices allocated on specific NUMA nodes and result matrices allocated on the node opposite to the execution, to maximize remote memory accesses and UPI traffic. Performance is analyzed using tools such as Intel VTune Profiler.
+# Context: The script is designed to test NUMA performance by controlling CPU and memory affinity, distributing tasks across two NUMA nodes, and generating high computational load through matrix multiplications (using numpy.dot). Results are logged for analysis.
+# Platform : Linux 
+# Configurable Parameters:
+# --matrix-size: Size of the square matrices.
+# --iterations: Number of multiplications per task.
+# --numa-node: Execution node(s) ('0', '1', or 'both').
+# --memory-node: Node for input matrices.
+# --num-tasks: Number of parallel tasks (2 to 40).
+# --HT/--noHT: Enable or disable hyper-threading.
+# Dependencies:
+# Python libraries: psutil, numpy, threadpoolctl, pyyaml, tqdm (install via pip).
+# System library: libnuma.so for NUMA management.
+# Authors: Guillaume Diamant
+# Date: May 2025 (last updated).
 #
 
-# Importation des bibliotheques necessaires
+# Importing the necessary libraries
 import sys
 import time
 import random
@@ -39,21 +32,21 @@ import ctypes
 import subprocess
 from tqdm import tqdm
 
-# Configuration des variables d'environnement pour limiter les threads BLAS a 1,
-# evitant les interferences dans un contexte multi-processus.
+# Configure environment variables to limit BLAS threads to 1,
+# avoiding interference in a multi-process context.
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
 
-# Chargement et configuration de la bibliotheque libnuma pour la gestion NUMA
+# Loading and configuring the libnuma library for NUMA management
 try:
     libnuma = ctypes.CDLL("libnuma.so")
     libnuma.numa_available.restype = ctypes.c_int
     if libnuma.numa_available() < 0:
         raise RuntimeError("NUMA n'est pas disponible sur ce systeme.")
 
-    # Definition des signatures des fonctions libnuma pour l'allocation memoire,
-    # l'affinite CPU/memoire, et la verification des noeuds.
+# Define libnuma function signatures for memory allocation,
+# CPU/memory affinity, and node verification.
     libnuma.numa_bitmask_alloc.restype = ctypes.c_void_p
     libnuma.numa_bitmask_alloc.argtypes = [ctypes.c_uint]
     libnuma.numa_bitmask_setbit.restype = None
@@ -83,39 +76,39 @@ except RuntimeError as e:
     numa_available = False
     print(str(e))
 
-# Classe Tee pour rediriger la sortie standard vers la console et un fichier journal
+# Tee class to redirect standard output to the console and a log file
 class Tee:
     def __init__(self, log_file):
         self.log_file = log_file
         self.terminal = sys.stdout
 
     def write(self, message):
-        # Ecrit le message a la fois dans la console et dans le fichier journal
+       # Writes the message to both the console and the log file
         self.terminal.write(message)
         self.log_file.write(message)
 
     def flush(self):
-        # Synchronise les buffers de la console et du fichier
+   # Synchronizes console and file buffers
         self.terminal.flush()
         self.log_file.flush()
 
-# Fonction pour obtenir la liste des CPU d'un noeud NUMA
+# Function to get the list of CPUs of a NUMA node
 def get_numa_node_cpus(node, use_ht=False):
-    # Retourne 20 CPU par noeud sans hyper-threading (coeurs physiques) ou 40 avec
+    # Returns 20 VCPUs per node without hyperthreading (physical cores) or 40 with
     if use_ht:
         return list(range(node * 40, (node + 1) * 40))
     else:
         return list(range(node * 20, (node + 1) * 20))
 
-# Fonction pour determiner le noeud NUMA d'un CPU donne
+# Function to determine the NUMA node of a given CPU
 def get_node_from_cpu(cpu_id, use_ht=False):
-    # Mappe le CPU au noeud 0 ou 1 en fonction de l'hyper-threading
+  # Maps CPU to node 0 or 1 depending on hyper-threading
     if use_ht:
         return 0 if cpu_id < 40 else 1
     else:
         return 0 if cpu_id < 20 else 1
 
-# Fonction pour formater une liste de CPU en une chaine lisible
+# Function to format a list of CPUs into a readable string
 def format_cpu_range(cpu_ids):
     if not cpu_ids:
         return "Aucun CPU"
@@ -127,36 +120,36 @@ def format_cpu_range(cpu_ids):
         return f"{min_cpu}-{max_cpu}"
     return ",".join(str(i) for i in sorted(cpu_ids))
 
-# Fonction pour initialiser une matrice sur un noeud NUMA specifique
+# Function to initialize a matrix on a specific NUMA node
 def initialize_matrix_on_node(matrix_size, node, matrix_ptr, size_bytes, matrix_name):
-    # Definit le noeud prefere pour l'allocation memoire si NUMA est disponible
+    # Sets the preferred node for memory allocation if NUMA is available
     if numa_available:
         libnuma.numa_set_preferred(node)
         print(f"Initialisation de la matrice {matrix_name} sur le noeud {node}.")
 
-    # Remplit la matrice avec des valeurs aleatoires reproductibles
+   # Fill the matrix with random values
     random.seed(42)
     initial_data = [random.random() for _ in range(matrix_size * matrix_size)]
     ctypes.memmove(matrix_ptr, (ctypes.c_double * len(initial_data)).from_buffer(np.array(initial_data, dtype=np.float64)), size_bytes)
 
-# Fonction executee par chaque tache parallele pour effectuer les multiplications de matrices
+# Function executed by each parallel task to perform matrix multiplications
 def matrix_multiply_task(task_id, matrix_size, iterations, cpu_id, num_tasks, matrix_a_ptr, matrix_b_ptr, results_queue, use_ht):
     try:
-        # Limite les operations BLAS a un seul thread pour eviter les conflits
+       # Limit BLAS operations to a single thread to avoid conflicts
         with ThreadpoolController().limit(limits=1, user_api='blas'):
-            # Definit et verifie l'affinite CPU pour le processus
+ # Define and check the CPU affinity for the process
             process = psutil.Process()
             process.cpu_affinity([cpu_id])
             actual_affinity = process.cpu_affinity()
             if cpu_id not in actual_affinity:
                 raise RuntimeError(f"Tache {task_id} : Affinite incorrecte, attendue {cpu_id}, reelle {actual_affinity}")
 
-            # Verifie que le processus utilise un seul thread
+           # Checks that the process uses a single thread
             num_threads = len(process.threads())
             if num_threads > 1:
                 print(f"Avertissement Tache {task_id} : Trop de threads detectes ({num_threads}, attendu 1)")
 
-            # Configure l'affinite memoire et le noeud prefere pour l'execution
+            # Configure memory affinity and preferred node for execution
             if numa_available:
                 preferred_node = get_node_from_cpu(cpu_id, use_ht)
                 nodemask = libnuma.numa_bitmask_alloc(2)
@@ -167,12 +160,12 @@ def matrix_multiply_task(task_id, matrix_size, iterations, cpu_id, num_tasks, ma
                 finally:
                     libnuma.numa_bitmask_free(nodemask)
 
-            # Calcule la taille de la matrice et le noeud cible pour matrix_c
+            # Calculates the matrix size and target node for matrix_c
             size_bytes = matrix_size * matrix_size * ctypes.sizeof(ctypes.c_double)
             exec_node = get_node_from_cpu(cpu_id, use_ht)
-            result_node = 1 if exec_node == 0 else 0  # Alloue matrix_c sur le noeud oppose
+            result_node = 1 if exec_node == 0 else 0  # Allocate matrix_c on the opposite node
 
-            # Force l'affinite memoire pour matrix_c sur le noeud cible
+            # Force memory affinity for matrix_c on the target node
             if numa_available:
                 nodemask = libnuma.numa_bitmask_alloc(2)
                 try:
@@ -182,13 +175,13 @@ def matrix_multiply_task(task_id, matrix_size, iterations, cpu_id, num_tasks, ma
                 finally:
                     libnuma.numa_bitmask_free(nodemask)
 
-            # Alloue matrix_c avec une marge pour l'alignement sur 64 octets
+           # Allocates matrix_c with a margin for 64-byte alignment
             matrix_c_ptr = libnuma.numa_alloc_onnode(size_bytes + 64, result_node)
             if not matrix_c_ptr:
                 raise MemoryError(f"Tache {task_id} : Echec de l'allocation memoire pour matrix_c sur le noeud {result_node}.")
-            aligned_c_ptr = (matrix_c_ptr + 63) & ~63  # Alignement memoire
+            aligned_c_ptr = (matrix_c_ptr + 63) & ~63  # Memory alignment
 
-            # Verifie le noeud d'allocation reel de matrix_c
+            # Check the actual allocation node of matrix_c
             if numa_available:
                 membind = libnuma.numa_get_membind()
                 node_0_set = libnuma.numa_bitmask_isbitset(membind, 0)
@@ -199,16 +192,16 @@ def matrix_multiply_task(task_id, matrix_size, iterations, cpu_id, num_tasks, ma
                     print(f"Tache {task_id} : Erreur d'allocation, noeud {allocated_node} ne correspond pas au noeud attendu {result_node}.")
                 libnuma.numa_bitmask_free(membind)
 
-            # Cree des vues numpy des matrices d'entree pour les calculs
+           # Create numpy views of input matrices for computations
             matrix_a = np.frombuffer(ctypes.string_at(matrix_a_ptr, size_bytes), dtype=np.float64).reshape(matrix_size, matrix_size)
             matrix_b = np.frombuffer(ctypes.string_at(matrix_b_ptr, size_bytes), dtype=np.float64).reshape(matrix_size, matrix_size)
 
-            # Effectue les multiplications de matrices pour le nombre d'iterations specifie
+          # Performs matrix multiplications for the specified number of iterations
             iteration_results = []
-            block_size = matrix_size // 8  # Divise en blocs 8x8 pour augmenter le trafic UPI
+            block_size = matrix_size // 8  # Split into 8x8 blocks to increase UPI traffic
             for _ in range(iterations):
                 result = np.dot(matrix_a, matrix_b)
-                # Copie les blocs de resultat dans matrix_c pour simuler des ecritures memoire
+               # Copy result blocks into matrix c to simulate memory writes
                 for i in range(0, matrix_size, block_size):
                     for j in range(0, matrix_size, block_size):
                         block = result[i:i+block_size, j:j+block_size]
@@ -217,10 +210,10 @@ def matrix_multiply_task(task_id, matrix_size, iterations, cpu_id, num_tasks, ma
                 matrix_c = np.frombuffer(ctypes.string_at(aligned_c_ptr, size_bytes), dtype=np.float64).reshape(matrix_size, matrix_size)
                 iteration_results.append(float(matrix_c[0, 0]))
 
-            # Libere la memoire allouee pour matrix_c
+           # Free the memory allocated for matrix c
             libnuma.numa_free(matrix_c_ptr, size_bytes + 64)
 
-            # Envoie les resultats (metadonnees et premieres valeurs) a la file
+            # Sends the results (metadata and first values) to the queue
             results_queue.put({
                 'task_id': task_id,
                 'cpu_id': cpu_id,
@@ -237,16 +230,16 @@ def matrix_multiply_task(task_id, matrix_size, iterations, cpu_id, num_tasks, ma
 # Fonction principale pour coordonner l'execution des taches NUMA
 def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, use_ht=False):
     try:
-        # Valide le nombre de taches
+       # Validates the number of spots
         if num_tasks < 2 or num_tasks > 40:
             raise ValueError("Erreur : Le nombre de taches doit etre entre 2 et 40")
 
-        # Valide le noeud NUMA specifie
+       # Validates the specified NUMA node
         valid_nodes = ['0', '1', 'both']
         if numa_node not in valid_nodes:
             raise ValueError(f"Erreur : Noeud NUMA {numa_node} invalide, valeurs attendues : {valid_nodes}")
 
-        # Assigne les CPU en fonction du noeud NUMA et de l'hyper-threading
+        # Assigns CPUs based on NUMA node and hyper-threading
         if numa_node == 'both':
             node0_cpus = get_numa_node_cpus(0, use_ht)
             node1_cpus = get_numa_node_cpus(1, use_ht)
@@ -259,14 +252,14 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
             cpu_ids = get_numa_node_cpus(numa_node_int, use_ht)[:num_tasks]
             impacted_nodes = [numa_node_int]
 
-        # Verifie que suffisamment de CPU sont disponibles
+        # Checks that enough CPUs are available
         if num_tasks > len(cpu_ids):
             raise ValueError(f"Erreur : Pas assez de vCPUs ({len(cpu_ids)}) pour {num_tasks} taches")
 
-        # Calcule la taille des matrices en octets
+        # Calculates the size of matrices in bytes
         size_bytes = matrix_size * matrix_size * ctypes.sizeof(ctypes.c_double)
 
-        # Alloue les matrices d'entree sur les noeuds specifies
+        # Allocates the input matrices on the specified nodes
         if numa_node == 'both':
             matrix_a0_ptr = libnuma.numa_alloc_onnode(size_bytes, 0)
             matrix_b0_ptr = libnuma.numa_alloc_onnode(size_bytes, 0)
@@ -278,7 +271,7 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
             matrix_b_ptr = libnuma.numa_alloc_onnode(size_bytes, memory_node)
             memory_node_display = str(memory_node)
 
-        # Verifie les allocations des matrices d'entree
+       # Check input matrix allocations
         if numa_node == 'both':
             if not matrix_a0_ptr or not matrix_b0_ptr or not matrix_a1_ptr or not matrix_b1_ptr:
                 raise MemoryError("Echec de l'allocation memoire avec numa_alloc_onnode.")
@@ -286,7 +279,7 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
             if not matrix_a_ptr or not matrix_b_ptr:
                 raise MemoryError("Echec de l'allocation memoire avec numa_alloc_onnode.")
 
-        # Initialise les matrices d'entree avec des valeurs aleatoires
+        # Initializes the input matrices with random values
         if numa_node == 'both':
             initialize_matrix_on_node(matrix_size, 0, matrix_a0_ptr, size_bytes, "A0")
             initialize_matrix_on_node(matrix_size, 0, matrix_b0_ptr, size_bytes, "B0")
@@ -296,7 +289,7 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
             initialize_matrix_on_node(matrix_size, memory_node, matrix_a_ptr, size_bytes, "A")
             initialize_matrix_on_node(matrix_size, memory_node, matrix_b_ptr, size_bytes, "B")
 
-        # Affiche les noeuds cibles pour matrix_c
+       # Displays target nodes for matrix_c
         if numa_node == 'both':
             for i in range(num_tasks):
                 exec_node = get_node_from_cpu(cpu_ids[i], use_ht)
@@ -306,11 +299,11 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
             for i in range(num_tasks):
                 print(f"Matrice C pour la tache {i} allouee sur le noeud {1 if memory_node == 0 else 0} (execution sur noeud {memory_node}).")
 
-        # Cree une file pour collecter les resultats des taches
+        # Create a queue to collect task results
         results_queue = multiprocessing.Queue()
         processes = []
 
-        # Lance les processus pour chaque tache
+        # Launches processes for each task
         for i in range(num_tasks):
             if numa_node == 'both':
                 exec_node = get_node_from_cpu(cpu_ids[i], use_ht)
@@ -323,12 +316,12 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
             processes.append(p)
             p.start()
 
-        # Attend la fin de tous les processus avec une barre de progression
+       # Waits for all processes to complete with a progress bar
         print("Attente de la fin des processus...")
         for p in tqdm(processes, desc="Progression des taches", unit="tache"):
             p.join()
 
-        # Collecte les resultats des taches
+       # Collects task results
         results = [None] * num_tasks
         for _ in range(num_tasks):
             result = results_queue.get(timeout=10)
@@ -337,7 +330,7 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
                 continue
             results[result['task_id']] = result
 
-        # Affiche les details de chaque tache
+        # Displays details of each task
         for result in results:
             if result is None:
                 continue
@@ -347,14 +340,14 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
                   f"noeud NUMA exec : {result['exec_node']}, "
                   f"noeud memoire resultat : {result.get('result_node', memory_node_display)}")
 
-        # Affiche les statistiques NUMA pour le processus principal
+       # Displays NUMA statistics for the main process
         current_pid = os.getpid()
         numastat_output = subprocess.run(['numastat', '-p', str(current_pid)], capture_output=True, text=True)
         if numastat_output.returncode == 0:
             print(f"\nStatistiques NUMA pour PID {current_pid} :")
             print(numastat_output.stdout)
 
-        # Libere la memoire allouee pour les matrices d'entree
+       # Frees memory allocated for input matrices
         if numa_node == 'both':
             libnuma.numa_free(matrix_a0_ptr, size_bytes)
             libnuma.numa_free(matrix_b0_ptr, size_bytes)
@@ -368,15 +361,15 @@ def matrix_multiply(matrix_size, iterations, numa_node, memory_node, num_tasks, 
         print(str(e))
         sys.exit(1)
 
-# Fonction principale pour parser les arguments et lancer l'execution
+# Main function to parse arguments and start execution
 def main():
-    # Cree un fichier journal horodate
+    # Create a timestamp log file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = f"execution_log_{timestamp}.log"
     with open(log_filename, 'w') as log_file:
         sys.stdout = Tee(log_file)
         try:
-            # Parse les arguments de la ligne de commande
+            # Parse command line arguments
             parser = argparse.ArgumentParser()
             parser.add_argument("--matrix-size", type=int, default=100)
             parser.add_argument("--iterations", type=int, default=10)
@@ -387,18 +380,18 @@ def main():
             parser.add_argument("--noHT", action="store_true")
             args = parser.parse_args()
 
-            # Determine l'utilisation de l'hyper-threading et le noeud memoire
+           # Determines hyper-threading usage and memory node
             use_ht = args.HT and not args.noHT
             memory_node = args.memory_node if args.memory_node is not None else int(args.numa_node) if args.numa_node != 'both' else 0
 
-            # Configure l'affinite memoire globale si necessaire
+            # Configure global memory affinity if needed
             if numa_available and args.numa_node != 'both':
                 nodemask = libnuma.numa_bitmask_alloc(2)
                 libnuma.numa_bitmask_setbit(nodemask, memory_node)
                 libnuma.numa_set_membind(nodemask)
                 libnuma.numa_bitmask_free(nodemask)
 
-            # Lance l'execution des taches
+            # Starts the execution of tasks
             matrix_multiply(args.matrix_size, args.iterations, args.numa_node, memory_node, args.num_tasks, use_ht)
 
         finally:
